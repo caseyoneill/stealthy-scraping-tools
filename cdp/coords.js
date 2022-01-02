@@ -191,14 +191,17 @@ async function getCoords(css_selector) {
 
     let result = null;
     let clientRectCmd = `var targetCoordEl = document.querySelector('${css_selector}'); if (targetCoordEl) { JSON.stringify(targetCoordEl.getClientRects()); }`;
-
+    
     result = await Runtime.evaluate({
       expression: clientRectCmd,
     });
 
     // get offset screen positioning
+    // const screenPos = await Runtime.evaluate({
+    //   expression: "JSON.stringify({offsetY: window.screen.height - window.innerHeight, offsetX: window.screen.width - window.innerWidth})"
+    // });
     const screenPos = await Runtime.evaluate({
-      expression: "JSON.stringify({offsetY: window.screen.height - window.innerHeight, offsetX: window.screen.width - window.innerWidth})"
+      expression: "JSON.stringify({offsetY: window.screenTop + (window.outerHeight - window.innerHeight), offsetX: window.screenLeft})"
     });
 
     let offset = JSON.parse(screenPos.result.value);
@@ -209,7 +212,7 @@ async function getCoords(css_selector) {
     } catch(err) {
       return null;
     }
-
+    // console.log(offset.offsetX + ' - ' + clientRect.x)
     let retVal =  {
       x: offset.offsetX + clientRect.x,
       y: offset.offsetY + clientRect.y,

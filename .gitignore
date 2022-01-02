@@ -1,4 +1,9 @@
 cdp/node_modules/*
 target.py
+.idea/
+.vscode/
+__pycache__
 local_forward_proxy_server/node_modules/
 local_forward_proxy_server/node_modules/*
+node_modules/
+package-lock.json
