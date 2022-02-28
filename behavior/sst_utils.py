@@ -25,9 +25,11 @@ def getPageSource():
   return ps
 
 def evalJS(command):
-  command = command.replace('\n', '')
+  with open('/tmp/evalCommand.txt', 'w') as f:
+    f.write(command)
+
   script_path = getScriptPath('eval_js.js')
-  cmd = f"node {script_path} '{command}'"
+  cmd = f"node {script_path}"
   ps = subprocess.check_output(cmd, shell=True)
   return ps
 
@@ -39,6 +41,7 @@ def getCoords(selector, randomize_within_bcr=True):
   cmd = f"node {script_path} '{selector}'"
   print(f"Calling command '{cmd}'")
   coords = subprocess.check_output(cmd, shell=True)
+  coords = coords.decode()
 
   x, y = 0, 0
 
@@ -47,12 +50,14 @@ def getCoords(selector, randomize_within_bcr=True):
     x = parsed['x']
     y = parsed['y']
 
+    # this is fucking inaccurate. WHY???
+    # is el.getBoundingClientRect() fucky?
     if randomize_within_bcr:
-      x += random.randrange(0, math.floor(parsed['width'] / 2))
-      y += random.randrange(0, math.floor(parsed['height'] / 4))
+      # print(x, y, parsed['width'], parsed['height'])
+      x += random.randint(0, math.floor(parsed['width'] / 4))
+      y += random.randint(0, math.floor(parsed['height'] / 4))
   except Exception as e:
-    print(e)
-    print(cmd, coords)
+    print('getCoords() failed with Error: {}'.format(e))
     return None
 
   return x, y
@@ -67,4 +72,4 @@ def startBrowser(args=[]):
     # startCmd = 'google-chrome --remote-debugging-port=9222 --no-sandbox --disable-notifications --start-maximized --no-first-run --no-default-browser-check --incognito &'
   
   os.system(startCmd)
-  time.sleep(5)
+  time.sleep(random.uniform(4, 5))

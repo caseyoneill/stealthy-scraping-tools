@@ -1,9 +1,11 @@
 import time
 import random
 import json
+import sys
 import pprint
 from behavior.sst_utils import *
-from behavior.behavior import humanMove, humanScroll, press, typeNormal, clickNormal, typeWrite
+from behavior.behavior import humanMove, humanScroll, typeNormal, getDim
+import immo_env
 
 """
 this is an example how to scrape www.immobilienscout24.de with stealthy-scraping-tools
@@ -14,6 +16,14 @@ advanced?
 
 Let's see ;)
 """
+
+if not os.path.exists('apartments.json'):
+  with open('apartments.json', 'w') as f:
+    json.dump(dict(), f)
+
+apartments = json.load(open('apartments.json', 'r'))
+
+SEARCH_URL = immo_env.SEARCH_URL
 
 
 def startFluxbox():
@@ -32,19 +42,82 @@ def startVNC():
   os.system(vnc_cmd)
 
 
+def moveRandomly(steps=5):
+  width, height = getDim()
+  width = min(1920, width)
+  # this is where the bot check is happening
+  # move the mouse a bit
+  for i in range(steps):
+    humanMove(*(random.randrange(0, width-50), random.randrange(0, height-50)),
+     clicks=0, steps=2)
+    time.sleep(random.uniform(0.25, 1.0))
+
+
+def contact(listing):
+  """
+  contact the listing. This is where I get mostly blocked.
+  """
+  goto('https://www.immobilienscout24.de' + listing.get('url'))
+  moveRandomly(steps=4)
+
+  already_contacted = getCoords('.is24-icon-heart-Favorite-glyph') is not None
+  if already_contacted:
+    print('Listing {} already contacted'.format(listing.get('url')))
+    return True
+
+  # contact
+  contact_button = getCoords("a span.palm-hide.email-button-desk-text.font-standard")
+  humanMove(*contact_button, clicks=1)
+  time.sleep(random.uniform(4, 5.5))
+
+  # check if message already entered
+  already_entered = json.loads(evalJS('document.getElementById("contactForm-Message").value.includes("und Langfristiges")')) is True
+  if not already_entered:
+    evalJS('document.getElementById("contactForm-Message").value = `{}`'.format(''))
+    # input message
+    input = getCoords("#contactForm-Message")
+    humanMove(*input, clicks=3)
+    typeNormal('Guten Tag, ')
+    time.sleep(random.uniform(0.5, 1.1))
+    evalJS('document.getElementById("contactForm-Message").value = `{}`'.format(immo_env.MESSAGE))
+    time.sleep(random.uniform(0.5, 1.1))
+
+  time.sleep(random.uniform(0.5, 1.1))
+
+  no_pets = getCoords('[for="contactForm-hasPets.no"]')
+  if no_pets:
+    humanScroll(4, (5, 20), -1)
+    time.sleep(random.uniform(1.5, 1.5))
+    no_pets = getCoords('[for="contactForm-hasPets.no"]')
+    humanMove(*no_pets, clicks=1)
+    submit = getCoords('button.button-primary.padding-horizontal-m')
+    humanMove(*submit, clicks=1)
+  else:
+    submit = getCoords('button[data-qa="sendButtonBasic"]')
+    humanMove(*submit, clicks=1)
+
+  time.sleep(random.uniform(3.9, 5.9))
+  return True
+
+
+def is_detected():
+  detected = json.loads(evalJS("JSON.stringify(document.body.textContent.includes('Warum haben wir deine Anfrage blockiert?'));")) == True
+  other = json.loads(evalJS("JSON.stringify(document.body.textContent.includes('Sicherheitsabfrage'));")) == True
+  if detected or other:
+    print('Got detected as a bot. Aborting.')
+    sys.exit(0)
+    return True 
+  else: 
+    return False
+
+
 def main():
   if os.getenv('DOCKER') == '1':
     startFluxbox()
     startVNC()
 
-  startBrowser(args=['--incognito' if os.getenv('DOCKER') != '1' else ''])
-  time.sleep(random.uniform(3, 5))
-
-  # enter the url
-  # humanMove(168, 79)
-  # time.sleep(random.uniform(0.5, 1.5))
-  # humanTyping('www.immobilienscout24.de\n', speed=(0.005, 0.008))
-  # time.sleep(random.uniform(1.5, 2.5))
+  # startBrowser(args=['--incognito'])
+  startBrowser(args=[])
 
   if os.getenv('DOCKER') == '1':
     # close the annoying chrome error message bar
@@ -55,64 +128,53 @@ def main():
     humanMove(1889, 103)
     time.sleep(random.uniform(2.5, 3.5))
 
-  for i in range(7):
-    time.sleep(random.uniform(0.5, 1.0))
-
+  try:
     goto('https://www.immobilienscout24.de')
-    time.sleep(random.uniform(4, 6))
+    moveRandomly()
 
     # are there cookies to accept?
     # cookie consent is in an iframe with id '#gdpr-consent-notice'
     # coords = getCoords('button#save', '#gdpr-consent-notice')
-    if i == 0:
-      coords = 1099, 859
-      print(f'[{i}] Accept to Cookies {coords}')
-      humanMove(*coords)
-      time.sleep(random.uniform(3.5, 4.5))
+    coords = 1099, 859
+    print(f'Accept Cookies by clicking at {coords}')
+    humanMove(*coords)
+    time.sleep(random.uniform(3.5, 4.5))
 
-    # enter City
-    if i == 0:
-      input_loc = getCoords('#oss-location')
-      print('Enter City ' + str(input_loc))
-      humanMove(*input_loc, clicks=1)
+    # login with username and password
+    profile_button = getCoords('#link_loginAccountLink')
+    humanMove(*profile_button, clicks=0)
+    time.sleep(random.uniform(0.5, 2))
+
+    login_button = getCoords("#is24-dropdown > div.MyscoutDropdownV2_LoginContainer__3X0hy.topnavigation__sso-login__link-list--logged-out > a")
+    # if login button not visible, we are logged in probably
+    if login_button:
+      humanMove(*login_button, clicks=1)
+
+      time.sleep(random.uniform(2.5, 4))
+
+      user_input = getCoords('#username')
+      if not user_input:
+        raise Exception('Cannot find username input field by id #username')
+        
+      humanMove(*user_input, clicks=1)
       time.sleep(random.uniform(0.25, 1.25))
-      typeNormal('K')
-      time.sleep(random.uniform(1.5, 2.5))
-      press('down')
-      time.sleep(random.uniform(0.5, 1.0))
-      press('down')
-      time.sleep(random.uniform(0.5, 1.0))
-      press('enter')
-      time.sleep(random.uniform(2.5, 3.5))
+      typeNormal(immo_env.EMAIL)
+      time.sleep(random.uniform(0.25, 1.25))
 
-    # input price
-    input_price = getCoords('input#oss-price')
-    print('Enter Max Price ' + str(input_price))
-    humanMove(*input_price, clicks=1)
-    time.sleep(random.uniform(0.25, 1.25))
-    typeWrite(['backspace'] * 5)
-    time.sleep(random.uniform(0.25, 0.75))
-    typeNormal(str(random.randrange(600, 700)))
+      humanMove(*getCoords('#submit'), clicks=1)
+      time.sleep(random.uniform(2.25, 3.25))
 
-    time.sleep(random.uniform(0.25, 1.25))
+      humanMove(*getCoords('#password'), clicks=1)
+      time.sleep(random.uniform(0.25, 1.25))
+      typeNormal(immo_env.PASSWORD)
+      time.sleep(random.uniform(1.25, 2.25))
 
-    # input living area
-    input_area = getCoords('input#oss-area')
-    print('Enter Area ' + str(input_area))
-    humanMove(*input_area, clicks=1)
-    time.sleep(random.uniform(0.25, 1.25))
-    typeWrite(['backspace'] * 5)
-    time.sleep(random.uniform(0.25, 0.75))
-    typeNormal(str(random.randrange(40, 50)))
+      humanMove(*getCoords('#loginOrRegistration'), clicks=1)
+      time.sleep(random.uniform(2.25, 3.55))
 
-    # submit
-    submit = getCoords('button.oss-main-criterion.oss-button.button-primary.one-whole')
-    print('Submit ' + str(submit))
-    humanMove(*submit)
+    goto(SEARCH_URL)
 
-    time.sleep(random.uniform(4, 5.0))
-
-    humanScroll(7, (5, 20), -1)
+    humanScroll(8, (5, 20), -1)
 
     # finally parse the listings
     parse_listings = """var res = [];
@@ -122,10 +184,12 @@ def main():
 
   if (title) {
     let obj = {
+      contacted: false,
       title: title.textContent,
       url: el.querySelector("a.result-list-entry__brand-title-container").getAttribute("href"),
     };
     if (details) {
+      obj.location = el.querySelector(".result-list-entry__map-link.link-text-secondary.font-normal.font-ellipsis").textContent;
       obj.price = details.querySelector("dl.grid-item:nth-child(1)").textContent;
       obj.area = details.querySelector("dl.grid-item:nth-child(2)").textContent;
       obj.rooms = details.querySelector("dl.grid-item:nth-child(3)").textContent;
@@ -135,9 +199,49 @@ def main():
   });
   JSON.stringify(res);"""
 
-    listings = evalJS(parse_listings)
-    # print(listings)
-    pprint.pprint(json.loads(listings))
+    output = evalJS(parse_listings)
+    listings = json.loads(output)
+    # pprint.pprint(listings)
+    filtered_listings = {}
+    for el in listings:
+      if el.get('url'):
+        key = el.get('url')
+        location = el.get('location', '').lower().strip()
+        for pref in immo_env.PREFERRED_LOCATIONS:
+          if pref.lower().strip() in location:
+            filtered_listings[key] = el
+
+    # remove listings we already contacted
+    for key in apartments:
+      if key in filtered_listings:
+        if apartments[key].get('contacted', False):
+          print('already contacted listing ' + key)
+          del filtered_listings[key]
+
+    pprint.pprint(filtered_listings)
+
+    print('contacting {} listings'.format(len(filtered_listings)))
+    for key in filtered_listings:
+      try:
+        contacted = contact(filtered_listings[key])
+      except Exception as e:
+        print('Failed to contact {}. Blocked? Error: {}'.format(key, str(e)))
+        is_detected()
+
+      filtered_listings[key]['contacted'] = contacted
+      time.sleep(random.uniform(0.5, 1.25))
+
+    # update?
+    for k, v in filtered_listings.items():
+      apartments[k] = v
+
+    with open('apartments.json', 'w') as f:
+      json.dump(apartments, f)
+
+    os.system("pkill -f 'chrome'")
+  except Exception as e:
+    print('Error: {}'.format(e))
+    is_detected()
 
 
 if __name__ == '__main__':
